@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<link rel="stylesheet" type="text/css" href="stat/style.css">
+<script src="stat/winNumb.js"></script>
+<script>
+
+//Формируем имя списка сегодняшних заказов (он формируется из страниц книг или журналов при нажатии кнопки "Добавить в заказ")
+
+//*************************************Будут проблемы при переходе даты. Надо создавать дату начала работы  с сайтом и использовать ее 
+
+var date=new Date();
+
+//***********************************************************************************************************************************
+
+var TodayOrderList='OrderList:'+( (date.getDate().length==2) ? date.getDate() : '0'+date.getDate() )+'-'+( (date.getMonth().length==2) ? date.getMonth() : '0'+date.getMonth() )+'-'+date.getFullYear();
+// Проверяем наличие этого списка (были ли уже сделаны заказы)
+//Если DOM загружен
+document.addEventListener("DOMContentLoaded", selectSelected);
+function selectSelected ()
+{
+	if (localStorage[TodayOrderList]) 
+		{
+		
+	//Если список есть, то проходим по нему и всем элементам присваиваем class "selected" (выделяем зеленым)
+	let elem;
+		for (let id of localStorage[TodayOrderList].split('&'))
+			{
+			if (!localStorage[id]) {break}
+			elem=document.getElementById(id);
+				if (elem) 
+				{
+				elem.classList.add("selected");
+				//Вставляем количество в поле "количество"
+				let JSON_Product=localStorage[id]; // Считываем из localStorage данные по товару (строку в формате JSON)
+				let Product=JSON.parse(JSON_Product); // Конвертируем строку JSON в объект Product
+				document.getElementById(id+"_input_count").value=Product.ItemCount;
+
+
+				//Проверяем, если цена на странце книги и цена в прайсе отличаются, заменяем цену в прайсе на цену со странцы (она храниться 
+				//в Product.ItemPrice
+//***************Почему-то не работает условие
+				if (!Product.ItemPrice==parseFloat((document.getElementById(id+"_price").textContent))) 
+					{document.getElementById(id+"_price").innerHTML=''+Product.ItemPrice;} 
+//*****************************************************************************************************************
+					
+				let calc=sum_calculate_for_price(Product.ItemCount, Product.ItemPrice, Product.ItemDiscount);	
+				
+				document.getElementById(id+"_disc").innerHTML=(calc.discPercent>0) ? calc.discPercent+'%' :'&mdash;';
+				document.getElementById(id+"_sum_disc").innerHTML=(calc.disc>0) ? calc.disc.toFixed(2) :'&mdash;';
+				document.getElementById(id+"_sum_k_opl").innerHTML=calc.sum_contract;
+
+
+				}
+			}
+		}
+}
+
+
+
+function onChangeCount(id) {
+	let count=document.getElementById(id+'_input_count').value*1;
+	if (count*1>0) {  //Если количество изменилось, но осталось большим 0, то
+	
+		if (localStorage[id]) // если заказ на это наименование уже существовал и только изменилось количество
+		{
+			var JSON_Product=localStorage[id]; // Считываем из localStorage данные по товару (строку в формате JSON)
+			var Product=JSON.parse(JSON_Product); // Конвертируем строку JSON в объект Product
+			Product.ItemCount=count; // меняем количество на новое
+			JSON_Product=JSON.stringify(Product); //Преобразуем в JSON
+			localStorage[id]=JSON_Product; //Пишем в localStorage с новым количеством 
+		}
+		else //Если заказа не существовало:
+		{
+		var JSON_Product='{'+
+		'"ItemName": "'+ document.getElementById(id+'_name').innerHTML +'", '+        //Извлекаем имя
+        '"ItemPrice":' + document.getElementById(id+'_price').innerHTML +', '+     //Извлекаем цену
+		'"ItemDiscount":'+ document.getElementById(id).dataset.discount +', '+	   //Извлекаем систему скидок
+		'"ItemCount":'+count+'}'
+		var Product=JSON.parse(JSON_Product); // Конвертируем строку JSON в объект Product чтобы проще использовать в функции calc
+		
+		}
+		localStorage[id]=JSON_Product; //Пишем в localStorage с новым количеством 
+		
+		if (localStorage[TodayOrderList])   //Проверяем, существует ли сегодняшний список заказов  
+			{
+				if  (localStorage[TodayOrderList].indexOf(id)<0) //Если нет, добавляем
+					{
+						localStorage[TodayOrderList]+='&'+id;
+					}
+			}	
+		else //Если сегодняшнего списка заказов не существует, создаем его:
+			{
+				localStorage[TodayOrderList]=id;
+			}
+		
+		
+		
+		
+		
+		//Присваеваем класс "selected"
+		document.getElementById(id).classList.add("selected");
+		//Рассчитываем и вносим сумму к оплате,скидку 
+		let calc=sum_calculate_for_price(count, Product.ItemPrice, Product.ItemDiscount);	
+		document.getElementById(id+"_disc").innerHTML=(calc.discPercent>0) ? calc.discPercent+'%' :'&mdash;';
+		document.getElementById(id+"_sum_disc").innerHTML=(calc.disc>0) ? calc.disc.toFixed(2) :'&mdash;';
+		document.getElementById(id+"_sum_k_opl").innerHTML=calc.sum_contract;
+		
+	
+	
+	
+	
+	}
+	else 	//Если количество изменилось и стало равным 0, то
+			//нужно удалить товар из списка и удалить его заказ из localStore
+	{
+	document.getElementById(id+'_input_count').value='';
+	document.getElementById(id).classList.remove("selected"); //Выключаем выделение
+	document.getElementById(id+"_disc").innerHTML='&mdash;'; //Заменяем размер скидки на тире
+	document.getElementById(id+"_sum_disc").innerHTML='&mdash;'; //Заменяем сумму скидки на тире
+	document.getElementById(id+"_sum_k_opl").innerHTML='&mdash;';
+	localStorage.removeItem(id) //Удаляем заказанный предмет из localStorage
+	if (localStorage[TodayOrderList])   //Проверяем, существует ли сегодняшний список заказов  
+	{ //Удаляем есть он в списке или нет. Сначала id, потом двойные разделители
+		localStorage[TodayOrderList]=localStorage[TodayOrderList].replace(id,'').split('&&').join('&');
+		localStorage[TodayOrderList]=localStorage[TodayOrderList].replace(/^&+/g,"").replace(/&+$/g,""); //Удаляем лишние разделители в начали или конце списка
+		if (localStorage[TodayOrderList].length==0) {localStorage.removeItem(TodayOrderList);} //Если список пустой, удаляем его из localStorage 
+		
+		
+	}	
+
+
+	
+	
+	}
+
+
+
+
+
+
+}
+
+
+
+function sum_calculate_for_price(count, base_price, Discount)
+	{
+	let sum_contract=0; // Сумма счета цифрами
+	let disc=0; // Сумма скидки цифрами
+	let discPercent=0; // Размер скидки цифрами
+	let disc_str=''; // Сумма скидки словами
+	let sum_str=''; // Сумма счета словами
+	let base_sum; // Полная сумма без учета скидки (базовая цена*количество). Используется для расчета размера скидки. 
+	
+	//Получаем размер скидки
+	for (let i in Discount)	{
+		//Перебираем ключи объекта Discount, которые являются количеством единиц, необходимых для получения скидки
+		//Discount - примерно такого вида: {"10": "15","50": "25","100": "35"}, где  
+		// {"Количество 1" : "размер скидки 1", "Количество 2" : "размер скидки 2", "Количество 3" : "размер скидки 3"}	
+		if (count>=i*1) {discPercent=Discount[i]*1}
+		else {break}
+	}
+	base_sum=count*base_price;
+	sum_contract=count*Math.round(base_price*(100-discPercent))/100;
+	return {discPercent : discPercent,  disc : base_sum-sum_contract, sum_contract:sum_contract}; 
+	}
+
+
+
+
+//Надо исправить в Python'ской прграмме  к _input_count _sum_disc _sum_k_opl добавлять id. Иначе на странице элементы с одинаковыми id
+//В шаблоне исправить везде, где будет вставка, вставить <span>. Обязательно применить это для поля name
+
+
+
+</script>
+</head>
+<body>
+<div  id="mainDiv">
+<table align="center"  cellpadding="0" cellspacing="0"  >
+	  
+	
+<tbody>
+<tr><th colspan="7" align="center" style="color:red;">НОВЫЕ ДОКУМЕНТЫ</th></tr>
+<tr id="4.11" data-discount='{"10":"15","50":"25","100":"35"}'>
+
+<td  width="5%">4.11</td>
+<td class="col45p"><a href="pozharnaya-bezopasnost-v-respublike-belarus-specificheskie-trebovaniya/index.html" target="_blank"><span id="4.11_name"><b>СБОРНИК</b> Пожарная безопасность в Республике Беларусь. Специфические требования (2020)</span></a></td>
+<td class="col10p"><span id="4.11_price">28.45</span></td>
+<td class="col10p" ><input id="4.11_input_count" type="number" value="" min="0" max="999" size="2"title="Введите необходимое Вам количество экз."oninput="onChangeCount('4.11')"></td>
+<td class="col10p"><span id="4.11_disc">Без НДС</span></td>
+<td class="col10p"><span  id="4.11_sum_disc">&mdash;</span></td>
+<td class="col10p"><span id="4.11_sum_k_opl">&mdash;</span></td>
+</tr>
+<tr id="4.12" data-discount='{"10":"15","50":"25","100":"35"}'>
+<td  width="5%" >4.12</td>
+<td class="col45p"><a href="pozharnaya-bezopasnost-obektov-zheleznodorozhnogo-transporta/index.html" target="_blank"><span id="4.12_name"><b>СБОРНИК</b> Пожарная безопасность объектов железнодорожного транспорта (2020)</span></a></td>
+<td class="col10p"><span id="4.12_price">122.70</span></td>
+<td class="col10p" ><input id="4.12_input_count" class="book_count" type="number" value="" min="0" max="999" size="2"title="Введите необходимое Вам количество экз." oninput="onChangeCount('4.12')"></td>
+<td class="col10p"><span id="4.12_disc">Без НДС</span></td>
+<td class="col10p"><span  id="4.12_sum_disc">&mdash;</span></td>
+<td class="col10p"><span id="4.12_sum_k_opl">&mdash;</span></td>
+</tr>
+<tr id="4.13" data-discount='{"10":"15","50":"25","100":"35"}'>
+<td  width="5%">4.13</td>
+<td class="col45p"><a href="pozharnaya-bezopasnost-promyshlennyh-proizvodstv-i-stroitelnyh-ploshchadok/index.html" target="_blank"><span id="4.13_name"><b>СБОРНИК</b> Пожарная безопасность промышленных производств и строительных площадок (2020)</span></a></td>
+<td class="col10p"><span id="4.13_price">24.30</span></td>
+<td class="col10p" ><input id="4.13_input_count" class="book_count" type="number" value="" min="0" max="999" size="2"title="Введите необходимое Вам количество экз." oninput="onChangeCount('4.13')"></td>
+<td class="col10p"><span id="4.13_disc">Без НДС</span></td>
+<td class="col10p"><span  id="4.13_sum_disc">&mdash;</span></td>
+<td class="col10p"><span id="4.13_sum_k_opl">&mdash;</span></td>
+</tr>
+</table>
+
+</div>
+
+</body>
+</html>
